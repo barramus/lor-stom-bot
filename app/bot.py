@@ -29,7 +29,7 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
-from telegram.error import TimedOut
+from telegram.error import TimedOut, BadRequest
 from telegram.request import HTTPXRequest
 
 import app.db as db
@@ -132,14 +132,20 @@ def build_deeplink_keyboard(dentist: dict) -> InlineKeyboardMarkup | None:
         [[InlineKeyboardButton("💬 Написать стоматологу", url=url)]]
     )
 
+# ────────────────────────────────────────────────────────────────────────────────
 # Отправка
+
 async def _send_as_media_groups_with_caption(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
     caption_html: str,
     atts: List[dict],
     reply_markup: Optional[InlineKeyboardMarkup],
+    dentist: dict,
 ):
+    """Шлём файлы пачками по 10. К первому прикрепляем caption.
+    Если кнопка заблокирована настройками приватности — отправим текстовую ссылку.
+    """
     batch: List[InputMediaPhoto | InputMediaDocument] = []
     first_item_used = False
 
@@ -151,7 +157,28 @@ async def _send_as_media_groups_with_caption(
         del batch[:10]
         await context.bot.send_media_group(chat_id=chat_id, media=to_send)
         if reply_markup:
-            await context.bot.send_message(chat_id=chat_id, text="Связаться со стоматологом:", reply_markup=reply_markup)
+            try:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="Связаться со стоматологом:",
+                    reply_markup=reply_markup,
+                    disable_web_page_preview=True,
+                )
+            except BadRequest as e:
+                if "Button_user_privacy_restricted" in str(e):
+                    link = (
+                        f"https://t.me/{dentist.get('tg_username')}"
+                        if dentist.get("tg_username")
+                        else f"tg://user?id={dentist.get('tg_id')}"
+                    )
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"Связаться со стоматологом: {link}",
+                        disable_web_page_preview=True,
+                    )
+                else:
+                    # Прочие ошибки — просто игнорируем доп. сообщение
+                    pass
 
     for a in atts:
         if a["file_type"] == "photo":
@@ -190,7 +217,7 @@ async def _build_and_send_zip(
             total_size += f.file_size
 
     if total_size > MAX_ZIP_MB * 1024 * 1024:
-        await _send_as_media_groups_with_caption(context, chat_id, caption_text, atts, kb)
+        await _send_as_media_groups_with_caption(context, chat_id, caption_text, atts, kb, dentist)
         return
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -220,11 +247,40 @@ async def _build_and_send_zip(
                 parse_mode=ParseMode.HTML,
                 read_timeout=120.0,
                 reply_markup=kb,
+                disable_content_type_detection=True,
             )
         except TimedOut:
-            await _send_as_media_groups_with_caption(context, chat_id, caption_text, atts, kb)
+            # сеть не успела — шлём как медиа-группы
+            await _send_as_media_groups_with_caption(context, chat_id, caption_text, atts, kb, dentist)
+        except BadRequest as e:
+            # Кнопка может быть запрещена настройками приватности получателя
+            if "Button_user_privacy_restricted" in str(e):
+                # Повторим без кнопки и отдельно дадим текстовую ссылку
+                await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=bio,
+                    caption=caption_text,
+                    parse_mode=ParseMode.HTML,
+                    read_timeout=120.0,
+                    disable_content_type_detection=True,
+                )
+                link = (
+                    f"https://t.me/{dentist.get('tg_username')}"
+                    if dentist.get("tg_username")
+                    else f"tg://user?id={dentist.get('tg_id')}"
+                )
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"💬 Связаться со стоматологом: {link}",
+                    disable_web_page_preview=True,
+                )
+            else:
+                # Любая другая ошибка — попробуем отправить как медиа-группы без кнопки
+                await _send_as_media_groups_with_caption(context, chat_id, caption_text, atts, None, dentist)
 
+# ────────────────────────────────────────────────────────────────────────────────
 # Команды/Меню
+
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     assert update.message
     user = update.effective_user
@@ -238,14 +294,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if profile_empty:
         text = (
             "Этот бот помогает стоматологу быстро сформировать и отправить ЛОР-врачу полную информацию о пациенте — "
-            "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом.\n\n"
+            "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом 📑\n\n"
             "Похоже, профиль стоматолога не заполнен.\n"
             "Заполните, пожалуйста, данные о себе и начните новую консультацию ⬇️"
         )
     else:
         text = (
             "Этот бот помогает стоматологу быстро сформировать и отправить ЛОР-врачу полную информацию о пациенте — "
-            "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом. Проверьте, пожалуйста, свои данные и начните новую консультацию ⬇️"
+            "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом 📑 Проверьте, пожалуйста, свои данные и начните новую консультацию ⬇️"
         )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=MAIN_KB)
 
@@ -496,7 +552,6 @@ async def show_menu_on_unknown(update: Update, context: ContextTypes.DEFAULT_TYP
 # Error handler
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
     log.exception("Unhandled error", exc_info=context.error)
-    # аккуратно уведомим пользователя, если возможен ответ
     try:
         if isinstance(update, Update) and update.effective_chat:
             await context.bot.send_message(update.effective_chat.id, "Произошла ошибка. Попробуйте ещё раз.")
