@@ -252,12 +252,17 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_me(update: Update, context: ContextTypes.DEFAULT_TYPE):
     assert update.message
     dentist = await db.get_dentist_by_tg_id(update.effective_user.id)
+    username_line = (
+        f"Username: @{dentist['tg_username']}"
+        if dentist.get("tg_username")
+        else "Username: —"
+    )
     text = (
         "<b>Ваши данные:</b>\n"
         f"Имя: {dentist.get('full_name') or '—'}\n"
         f"Телефон: {dentist.get('phone') or '—'}\n"
         f"Место работы: {dentist.get('workplace') or '—'}\n"
-        f"Username: @{dentist['tg_username']}" if dentist.get("tg_username") else "Username: —"
+        f"{username_line}"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=MAIN_KB)
 
@@ -298,7 +303,7 @@ async def cb_view_consult(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Регистрация (многошагово)
 async def reg_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     assert update.message
-    await update.message.reply_text("Заполним профиль стоматолога 🦷\nВведите ФИО:", reply_markup=ReplyKeyboardRemove())
+    await update.message.reply_text("🦷 Заполним профиль стоматолога\nВведите ФИО:", reply_markup=ReplyKeyboardRemove())
     return STATE_REG_NAME
 
 async def reg_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
