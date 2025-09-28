@@ -287,14 +287,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if profile_empty:
         text = (
             "Этот бот помогает стоматологу быстро сформировать и отправить ЛОР-врачу полную информацию о пациенте — "
-            "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом.\n\n"
-            "Похоже, профиль стоматолога не заполнен.\n"
+            "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом 📑\n\n"
+            "Похоже, профиль стоматолога еще не оформлен ✍🏼\n"
             "Заполните, пожалуйста, данные о себе и начните новую консультацию ⬇️"
         )
     else:
         text = (
             "Этот бот помогает стоматологу быстро сформировать и отправить ЛОР-врачу полную информацию о пациенте — "
-            "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом. Проверьте, пожалуйста, свои данные и начните новую консультацию ⬇️"
+            "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом 📑 Проверьте, пожалуйста, свои данные и начните новую консультацию ⬇️"
         )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=MAIN_KB)
 
@@ -449,21 +449,21 @@ async def new_complaints(update: Update, context: ContextTypes.DEFAULT_TYPE):
     assert update.message
     context.user_data["consult"]["patient_complaints"] = update.message.text.strip()
     await db.save_draft(update.effective_user.id, context.user_data["consult"], context.user_data["attachments"])
-    await update.message.reply_text("2/4. Анамнез / сопутствующие данные (кратко).")
+    await update.message.reply_text("2/4. Анамнез / сопутствующие данные (кратко):")
     return STATE_HISTORY
 
 async def new_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     assert update.message
     context.user_data["consult"]["patient_history"] = update.message.text.strip()
     await db.save_draft(update.effective_user.id, context.user_data["consult"], context.user_data["attachments"])
-    await update.message.reply_text("3/4. Планируемая стоматологическая работа.")
+    await update.message.reply_text("3/4. Планируемая стоматологическая работа:")
     return STATE_PLAN
 
 async def new_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     assert update.message
     context.user_data["consult"]["planned_work"] = update.message.text.strip()
     await db.save_draft(update.effective_user.id, context.user_data["consult"], context.user_data["attachments"])
-    await update.message.reply_text("4/4. Прикрепите снимки/файлы (можно несколько). Когда закончите — напишите «Готово».")
+    await update.message.reply_text("4/4. Прикрепите снимки/файлы (можно несколько, до 40 Мб)📎 Когда закончите — напишите «Готово»")
     return STATE_FILES
 
 async def new_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -523,18 +523,18 @@ async def new_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.clear_draft(user.id)
         context.user_data["consult"] = {}
         context.user_data["attachments"] = []
-        await update.message.reply_text("Начинаем заново. Введите жалобы пациента:", reply_markup=ReplyKeyboardRemove())
+        await update.message.reply_text("Начинаем заново. 1/4 Жалобы пациента:", reply_markup=ReplyKeyboardRemove())
         return STATE_COMPLAINTS
 
     if choice.startswith("▶️"):
         await update.message.reply_text("Продолжаем заполнение.", reply_markup=ReplyKeyboardRemove())
         if not consult.get("patient_history"):
-            await update.message.reply_text("2/4. Анамнез / сопутствующие данные (кратко).")
+            await update.message.reply_text("2/4. Анамнез / сопутствующие данные (кратко):")
             return STATE_HISTORY
         if not consult.get("planned_work"):
-            await update.message.reply_text("3/4. Планируемая стоматологическая работа.")
+            await update.message.reply_text("3/4. Планируемая стоматологическая работа:")
             return STATE_PLAN
-        await update.message.reply_text("4/4. Прикрепите файлы или напишите «Готово».")
+        await update.message.reply_text("4/4. Прикрепите снимки/файлы (можно несколько, до 40 Мб)📎 Когда закончите — напишите «Готово»")
         return STATE_FILES
 
 # Fallback
