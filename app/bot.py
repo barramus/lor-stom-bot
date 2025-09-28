@@ -1,4 +1,3 @@
-# app/bot.py
 import os
 import re
 import asyncio
@@ -66,11 +65,21 @@ STATE_COMPLAINTS, STATE_HISTORY, STATE_PLAN, STATE_FILES, STATE_CONFIRM = range(
 STATE_REG_NAME, STATE_REG_PHONE, STATE_REG_WORK = range(10, 13)
 
 def build_dentist_html(dentist: dict) -> str:
+    """
+    Имя + кликабельная ссылка:
+    - если есть username -> https://t.me/<username>
+    - иначе             -> tg://user?id=<tg_id>  (работает без ника)
+    """
     name = dentist.get("full_name") or "—"
     username = dentist.get("tg_username")
+    tg_id = dentist.get("tg_id")
+
     if username:
         return f'{name} (<a href="https://t.me/{username}">@{username}</a>)'
-    return name
+    elif tg_id:
+        return f'{name} (<a href="tg://user?id={tg_id}">написать</a>)'
+    else:
+        return name
 
 def build_summary_html(consult: dict, dentist: dict) -> str:
     return (
@@ -100,11 +109,27 @@ def short_caption(html_text: str) -> str:
     cut = cut.rsplit(" ", 1)[0]
     return cut + " … (полный текст в 00_summary.txt)"
 
-def build_deeplink_keyboard(dentist: dict) -> Optional[InlineKeyboardMarkup]:
-    if not dentist.get("tg_username"):
+def build_deeplink_keyboard(dentist: dict) -> InlineKeyboardMarkup | None:
+    """
+    Кнопка "Написать стоматологу":
+    - username -> https://t.me/<username>
+    - иначе    -> tg://user?id=<tg_id>
+    Если нет ни username, ни tg_id — кнопки нет.
+    """
+    username = dentist.get("tg_username")
+    tg_id = dentist.get("tg_id")
+
+    url = None
+    if username:
+        url = f"https://t.me/{username}"
+    elif tg_id:
+        url = f"tg://user?id={tg_id}"
+
+    if not url:
         return None
+
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("💬 Написать стоматологу", url=f"https://t.me/{dentist['tg_username']}")]]
+        [[InlineKeyboardButton("💬 Написать стоматологу", url=url)]]
     )
 
 # Отправка
@@ -207,18 +232,19 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await db.upsert_dentist(user.id, tg_username=user.username)
 
     dentist = await db.get_dentist_by_tg_id(user.id)
+    dentist.setdefault("tg_id", update.effective_user.id)  # <— важно для пользователей без ника
     profile_empty = not (dentist.get("full_name") or dentist.get("phone") or dentist.get("workplace"))
 
     if profile_empty:
         text = (
-            "Этот бот помогает стоматологу быстро собрать и отправить ЛОР-врачу полную информацию о пациенте — "
+            "Этот бот помогает стоматологу быстро сформировать и отправить ЛОР-врачу полную информацию о пациенте — "
             "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом.\n\n"
             "Похоже, профиль стоматолога не заполнен.\n"
             "Заполните, пожалуйста, данные о себе и начните новую консультацию ⬇️"
         )
     else:
         text = (
-            "Этот бот помогает стоматологу быстро собрать и отправить ЛОР-врачу полную информацию о пациенте — "
+            "Этот бот помогает стоматологу быстро сформировать и отправить ЛОР-врачу полную информацию о пациенте — "
             "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом. Проверьте, пожалуйста, свои данные и начните новую консультацию ⬇️"
         )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=MAIN_KB)
@@ -403,6 +429,7 @@ async def new_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     consult = context.user_data["consult"]
     dentist = await db.get_dentist_by_tg_id(user.id)
+    dentist.setdefault("tg_id", user.id)  # <— важно для пользователей без ника
     atts = context.user_data["attachments"]
 
     preview = build_summary_html(consult, dentist) + f"\n\n📎 Прикреплено файлов: {len(atts)}"
@@ -423,6 +450,7 @@ async def new_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     consult = context.user_data.get("consult", {})
     dentist = await db.get_dentist_by_tg_id(user.id)
+    dentist.setdefault("tg_id", user.id)  # <— важно для пользователей без ника
     atts = context.user_data.get("attachments", [])
 
     if choice.startswith("✅"):
