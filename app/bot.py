@@ -214,12 +214,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Этот бот помогает стоматологу быстро собрать и отправить ЛОР-врачу полную информацию о пациенте — "
             "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом.\n\n"
             "Похоже, профиль стоматолога не заполнен.\n"
-            "Нажмите «✍️ Заполнить профиль» или используйте команды /set_name /set_phone /set_workplace ⬇️"
+            "Заполните, пожалуйста, данные о себе и начните новую консультацию ⬇️"
         )
     else:
         text = (
             "Этот бот помогает стоматологу быстро собрать и отправить ЛОР-врачу полную информацию о пациенте — "
-            "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом. Проверьте свои данные и начните новую консультацию ⬇️"
+            "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом. Проверьте, пожалуйста, свои данные и начните новую консультацию ⬇️"
         )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=MAIN_KB)
 
@@ -265,7 +265,7 @@ async def cb_view_consult(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<b>Заявка #{c['id']}</b>\n"
         f"Статус: {c.get('status','—')}\n"
         f"Создана: {c.get('created_at','—')}\n\n"
-        "Детали анкеты сохраняются в черновике до отправки; архив, отправленный ЛОРу, содержит полный текст и файлы."
+        "Детали анкеты сохраняются в черновике до отправки; архив, отправленный ЛОР-врачу, содержит полный текст и файлы."
     )
     await query.edit_message_text(txt, parse_mode=ParseMode.HTML)
 
@@ -313,7 +313,7 @@ async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def set_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     assert update.message
     context.user_data["edit_field"] = "phone"
-    await update.message.reply_text("Введите новый телефон (или отправьте любую команду для отмены):")
+    await update.message.reply_text("Введите новый телефон в любом удобном формате (или отправьте любую команду для отмены):")
 
 async def set_workplace(update: Update, context: ContextTypes.DEFAULT_TYPE):
     assert update.message
@@ -429,7 +429,7 @@ async def new_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _build_and_send_zip(context, LOR_TARGET_CHAT_ID, consult, dentist, atts)
         await db.insert_consultation_log(user.id, status="sent")
         await db.clear_draft(user.id)
-        await update.message.reply_text("✅ Заявка отправлена ЛОРу.", reply_markup=MAIN_KB)
+        await update.message.reply_text("✅ Заявка отправлена ЛОР-врачу.", reply_markup=MAIN_KB)
         return ConversationHandler.END
 
     if choice.startswith("❌"):
@@ -484,7 +484,7 @@ async def post_init(application):
         BotCommand("cancel", "Отмена"),
     ])
     await application.bot.set_my_short_description("Это бот для быстрой консультации между стоматологом и ЛОР-врачом.")
-    await application.bot.set_my_description("Чат-бот для удобной связи стоматолога с ЛОР-врачом 🧑🏻‍⚕️")
+    await application.bot.set_my_description("Чат-бот для удобной связи стоматолога с ЛОР-врачом🧑🏻‍⚕️")
 
 # Application
 def build_application():
