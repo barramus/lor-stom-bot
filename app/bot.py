@@ -18,6 +18,7 @@ from telegram import (
     InlineKeyboardMarkup,
     BotCommand,
     CallbackQuery,
+    InputFile,  # <— используем для корректной отправки ZIP
 )
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -132,9 +133,7 @@ def build_deeplink_keyboard(dentist: dict) -> InlineKeyboardMarkup | None:
         [[InlineKeyboardButton("💬 Написать стоматологу", url=url)]]
     )
 
-# ────────────────────────────────────────────────────────────────────────────────
-# Отправка
-
+# Отправка медиагрупп (без ZIP)
 async def _send_as_media_groups_with_caption(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
@@ -143,9 +142,6 @@ async def _send_as_media_groups_with_caption(
     reply_markup: Optional[InlineKeyboardMarkup],
     dentist: dict,
 ):
-    """Шлём файлы пачками по 10. К первому прикрепляем caption.
-    Если кнопка заблокирована настройками приватности — отправим текстовую ссылку.
-    """
     batch: List[InputMediaPhoto | InputMediaDocument] = []
     first_item_used = False
 
@@ -156,29 +152,6 @@ async def _send_as_media_groups_with_caption(
         to_send = batch[:10]
         del batch[:10]
         await context.bot.send_media_group(chat_id=chat_id, media=to_send)
-        if reply_markup:
-            try:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text="Связаться со стоматологом:",
-                    reply_markup=reply_markup,
-                    disable_web_page_preview=True,
-                )
-            except BadRequest as e:
-                if "Button_user_privacy_restricted" in str(e):
-                    link = (
-                        f"https://t.me/{dentist.get('tg_username')}"
-                        if dentist.get("tg_username")
-                        else f"tg://user?id={dentist.get('tg_id')}"
-                    )
-                    await context.bot.send_message(
-                        chat_id=chat_id,
-                        text=f"Связаться со стоматологом: {link}",
-                        disable_web_page_preview=True,
-                    )
-                else:
-                    # Прочие ошибки — просто игнорируем доп. сообщение
-                    pass
 
     for a in atts:
         if a["file_type"] == "photo":
@@ -200,6 +173,30 @@ async def _send_as_media_groups_with_caption(
     if batch:
         await flush()
 
+    # Отдельным сообщением добавим кнопку/ссылку для связи
+    if reply_markup:
+        try:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="Связаться со стоматологом:",
+                reply_markup=reply_markup,
+            )
+        except BadRequest as e:
+            if "Button_user_privacy_restricted" in str(e):
+                link = (
+                    f"https://t.me/{dentist.get('tg_username')}"
+                    if dentist.get("tg_username")
+                    else f"tg://user?id={dentist.get('tg_id')}"
+                )
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=f"💬 Связаться со стоматологом: {link}",
+                    disable_web_page_preview=True,
+                )
+            else:
+                raise
+
+# Отправка ZIP (или fallback в медиагруппы)
 async def _build_and_send_zip(
     context: ContextTypes.DEFAULT_TYPE, chat_id: int, consult: dict, dentist: dict, atts: List[dict]
 ):
@@ -237,12 +234,11 @@ async def _build_and_send_zip(
             for p in local_paths:
                 z.write(p, arcname=os.path.basename(p))
         bio.seek(0)
-        bio.name = "lor_consultation.zip"
 
         try:
             await context.bot.send_document(
                 chat_id=chat_id,
-                document=bio,
+                document=InputFile(bio, filename="lor_consultation.zip"),
                 caption=caption_text,
                 parse_mode=ParseMode.HTML,
                 read_timeout=120.0,
@@ -250,15 +246,14 @@ async def _build_and_send_zip(
                 disable_content_type_detection=True,
             )
         except TimedOut:
-            # сеть не успела — шлём как медиа-группы
             await _send_as_media_groups_with_caption(context, chat_id, caption_text, atts, kb, dentist)
         except BadRequest as e:
-            # Кнопка может быть запрещена настройками приватности получателя
+            # Кнопка с tg://user?id=... может быть запрещена настройками приватности получателя
             if "Button_user_privacy_restricted" in str(e):
-                # Повторим без кнопки и отдельно дадим текстовую ссылку
+                bio.seek(0)  # повторная отправка — перематываем поток
                 await context.bot.send_document(
                     chat_id=chat_id,
-                    document=bio,
+                    document=InputFile(bio, filename="lor_consultation.zip"),
                     caption=caption_text,
                     parse_mode=ParseMode.HTML,
                     read_timeout=120.0,
@@ -275,12 +270,10 @@ async def _build_and_send_zip(
                     disable_web_page_preview=True,
                 )
             else:
-                # Любая другая ошибка — попробуем отправить как медиа-группы без кнопки
+                # На всякий случай — fallback в медиагруппы без кнопки
                 await _send_as_media_groups_with_caption(context, chat_id, caption_text, atts, None, dentist)
 
-# ────────────────────────────────────────────────────────────────────────────────
 # Команды/Меню
-
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     assert update.message
     user = update.effective_user
@@ -288,20 +281,20 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await db.upsert_dentist(user.id, tg_username=user.username)
 
     dentist = await db.get_dentist_by_tg_id(user.id)
-    dentist.setdefault("tg_id", update.effective_user.id)  # <— важно для пользователей без ника
+    dentist.setdefault("tg_id", user.id)  # важно для пользователей без ника
     profile_empty = not (dentist.get("full_name") or dentist.get("phone") or dentist.get("workplace"))
 
     if profile_empty:
         text = (
             "Этот бот помогает стоматологу быстро сформировать и отправить ЛОР-врачу полную информацию о пациенте — "
-            "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом 📑\n\n"
+            "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом.\n\n"
             "Похоже, профиль стоматолога не заполнен.\n"
             "Заполните, пожалуйста, данные о себе и начните новую консультацию ⬇️"
         )
     else:
         text = (
             "Этот бот помогает стоматологу быстро сформировать и отправить ЛОР-врачу полную информацию о пациенте — "
-            "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом 📑 Проверьте, пожалуйста, свои данные и начните новую консультацию ⬇️"
+            "жалобы, анамнез, план лечения и файлы — одним ZIP-архивом. Проверьте, пожалуйста, свои данные и начните новую консультацию ⬇️"
         )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=MAIN_KB)
 
@@ -490,7 +483,7 @@ async def new_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     consult = context.user_data["consult"]
     dentist = await db.get_dentist_by_tg_id(user.id)
-    dentist.setdefault("tg_id", user.id)  # <— важно для пользователей без ника
+    dentist.setdefault("tg_id", user.id)  # важно для пользователей без ника
     atts = context.user_data["attachments"]
 
     preview = build_summary_html(consult, dentist) + f"\n\n📎 Прикреплено файлов: {len(atts)}"
@@ -511,7 +504,7 @@ async def new_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     consult = context.user_data.get("consult", {})
     dentist = await db.get_dentist_by_tg_id(user.id)
-    dentist.setdefault("tg_id", user.id)  # <— важно для пользователей без ника
+    dentist.setdefault("tg_id", user.id)  # важно для пользователей без ника
     atts = context.user_data.get("attachments", [])
 
     if choice.startswith("✅"):
@@ -584,16 +577,12 @@ def build_application():
         .post_init(post_init)
         .build()
     )
-
-    # Обработчик ошибок
     app.add_error_handler(on_error)
 
-    # Базовые команды
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("me", cmd_me))
     app.add_handler(CommandHandler("list", cmd_list))
 
-    # Диалоги
     reg_conv = ConversationHandler(
         entry_points=[
             CommandHandler("fill", reg_start),
@@ -632,20 +621,16 @@ def build_application():
     )
     app.add_handler(consult_conv)
 
-    # Кнопка «Мои данные»
     app.add_handler(MessageHandler(filters.Regex(BTN_MY_DATA_RE), cmd_me))
 
-    # Одиночные правки профиля
     app.add_handler(CommandHandler("set_name", set_name))
     app.add_handler(CommandHandler("set_phone", set_phone))
     app.add_handler(CommandHandler("set_workplace", set_workplace))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_profile_edit, block=False), group=0)
     app.add_handler(MessageHandler(filters.COMMAND, cancel_edit_on_any_command, block=False), group=0)
 
-    # История (инлайн-кнопки)
     app.add_handler(CallbackQueryHandler(cb_view_consult, pattern=r"^view_consult:\d+$"))
 
-    # Дефолт
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, show_menu_on_unknown))
     return app
 
