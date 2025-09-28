@@ -23,8 +23,6 @@
    pip install -r requirements.txt
 Создайте .env (копия из .env.example):
 
-ini
-Копировать код
 BOT_TOKEN=ваш_токен_бота
 LOR_TARGET_CHAT_ID=123456789
 ADMIN_IDS=123456789
@@ -34,18 +32,14 @@ LOR_TARGET_CHAT_ID — chat_id ЛОР-врача (узнать через @useri
 
 ADMIN_IDS — список chat_id администраторов через запятую (опционально)
 
-Запустите бота:
+Запустите бот:
 
-bash
-Копировать код
 python -m app.bot
 ☁️ Развёртывание на VPS (Яндекс Облако)
 1. Подключение к серверу
 Создайте ВМ (Ubuntu 22.04 LTS), добавьте свой SSH-ключ при создании.
 Подключение:
 
-bash
-Копировать код
 ssh <имя_пользователя>@<IP_VM>
 2. Установка Python и зависимостей
 bash
@@ -55,15 +49,11 @@ sudo apt install -y python3.11 python3.11-venv git
 3. Загрузка проекта
 На локальном компьютере:
 
-bash
-Копировать код
 cd путь/к/проекту
 git remote add origin git@github.com:ваш_логин/lor-stom-bot.git
 git push origin main
 На сервере:
 
-bash
-Копировать код
 git clone https://github.com/<ваш_логин>/lor-stom-bot.git
 cd lor-stom-bot
 python3.11 -m venv venv
@@ -72,18 +62,14 @@ pip install -r requirements.txt
 cp .env.example .env
 nano .env  # заполните токен и chat_id
 4. Запуск
-bash
-Копировать код
 source venv/bin/activate
 python -m app.bot
+
 Чтобы бот работал постоянно — используйте tmux или systemd.
 
 Пример systemd-сервиса
-bash
-Копировать код
 sudo nano /etc/systemd/system/lor-bot.service
-ini
-Копировать код
+
 [Unit]
 Description=LOR Telegram Bot
 After=network.target
@@ -96,8 +82,6 @@ Restart=always
 
 [Install]
 WantedBy=multi-user.target
-bash
-Копировать код
 sudo systemctl daemon-reload
 sudo systemctl enable lor-bot
 sudo systemctl start lor-bot
