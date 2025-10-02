@@ -36,7 +36,6 @@ from telegram.request import HTTPXRequest
 import app.db as db
 from app.utils import log
 
-# ENV
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN or ":" not in BOT_TOKEN:
@@ -45,7 +44,6 @@ if not BOT_TOKEN or ":" not in BOT_TOKEN:
 LOR_TARGET_CHAT_ID = int(os.getenv("LOR_TARGET_CHAT_ID", "0"))
 MAX_ZIP_MB = int(os.getenv("MAX_ZIP_MB", "47"))
 
-# KEYBOARD
 MAIN_KB = ReplyKeyboardMarkup(
     [
         [KeyboardButton("🆕 Начать новую консультацию")],
@@ -172,7 +170,6 @@ async def _send_as_media_groups_with_caption(
     if batch:
         await flush()
 
-    # Отдельным сообщением добавим кнопку/ссылку для связи
     if reply_markup:
         try:
             await context.bot.send_message(
@@ -248,7 +245,7 @@ async def _build_and_send_zip(
         except BadRequest as e:
             # Кнопка с tg://user?id=... может быть запрещена настройками приватности получателя
             if "Button_user_privacy_restricted" in str(e):
-                bio.seek(0)  # повторная отправка — перематываем поток
+                bio.seek(0)
                 await context.bot.send_document(
                     chat_id=chat_id,
                     document=InputFile(bio, filename="lor_consultation.zip"),
@@ -268,26 +265,23 @@ async def _build_and_send_zip(
                     disable_web_page_preview=True,
                 )
             else:
-                # На всякий случай — fallback в медиагруппы без кнопки
                 await _send_as_media_groups_with_caption(context, chat_id, caption_text, atts, None, dentist)
 
-# Команды/Меню
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     assert update.message
     user = update.effective_user
-    # сохраняем/обновляем username
     await db.upsert_dentist(user.id, tg_username=user.username)
 
     dentist = await db.get_dentist_by_tg_id(user.id)
-    dentist.setdefault("tg_id", user.id)  # важно для пользователей без ника
+    dentist.setdefault("tg_id", user.id)
     profile_empty = not (dentist.get("full_name") or dentist.get("phone") or dentist.get("workplace"))
 
     if profile_empty:
         text = (
             "Данный бот создан для стоматологов-хирургов. "
             "Он поможет, если Вы при планировании аугментации и имплантации, в первом и втором сегменте на КТ увидели затемнение в пазухах, "
-            "наличие инородных тел или образований которые Вас смущают. В анкете Вам нужно указать: жалобы, краткий анамнез пациента, "
-            "планируемую с Вашей стороны работу, а так же прикрепить КТ сканы в коронарной и сагитальной проекции в которых видны изменения 📑\n\n"
+            "наличие инородных тел или образований, которые Вас смущают. В анкете Вам нужно указать: жалобы, краткий анамнез пациента, "
+            "планируемую с Вашей стороны работу, а так же прикрепить КТ сканы в коронарной и сагитальной проекции, в которых видны изменения 📑\n\n"
             "Похоже, профиль стоматолога еще не оформлен ✍🏼\n"
             "Заполните, пожалуйста, данные о себе и начните новую консультацию ⬇️"
         )
@@ -295,8 +289,8 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = (
             "Данный бот создан для стоматологов-хирургов. "
             "Он поможет, если Вы при планировании аугментации и имплантации, в первом и втором сегменте на КТ увидели затемнение в пазухах, "
-            "наличие инородных тел или образований которые Вас смущают. В анкете Вам нужно указать: жалобы, краткий анамнез пациента, "
-            "планируемую с Вашей стороны работу, а так же прикрепить КТ сканы в коронарной и сагитальной проекции в которых видны изменения 📑\n\n"
+            "наличие инородных тел или образований, которые Вас смущают. В анкете Вам нужно указать: жалобы, краткий анамнез пациента, "
+            "планируемую с Вашей стороны работу, а так же прикрепить КТ сканы в коронарной и сагитальной проекции, в которых видны изменения 📑\n\n"
             "Проверьте, пожалуйста, свои данные и начните новую консультацию ⬇️"
         )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=MAIN_KB)
@@ -352,7 +346,6 @@ async def cb_view_consult(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await query.edit_message_text(txt, parse_mode=ParseMode.HTML)
 
-# Регистрация (многошагово)
 async def reg_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     assert update.message
     await update.message.reply_text("🦷 Заполним профиль стоматолога\nВведите ФИО:", reply_markup=ReplyKeyboardRemove())
@@ -387,7 +380,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("❌ Отменено.", reply_markup=MAIN_KB)
     return ConversationHandler.END
 
-# Одиночные правки профиля
 async def set_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     assert update.message
     context.user_data["edit_field"] = "full_name"
@@ -424,7 +416,6 @@ async def handle_profile_edit(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def cancel_edit_on_any_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("edit_field", None)
 
-# Консультация (опрос)
 async def new_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     assert update.message
     user = update.effective_user
@@ -467,7 +458,7 @@ async def new_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["consult"]["planned_work"] = update.message.text.strip()
     await db.save_draft(update.effective_user.id, context.user_data["consult"], context.user_data["attachments"])
     await update.message.reply_text(
-        "4/4. Прикрепите снимки/файлы (можно несколько). Когда закончите — нажмите «Готово».",
+        "4/4. Прикрепите снимки/файлы (можно несколько, до 40 Мб). Когда закончите — нажмите «Готово».",
         reply_markup=ReplyKeyboardMarkup(
             [["Готово"]],
             resize_keyboard=True,
@@ -486,7 +477,6 @@ async def new_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["attachments"].append({"file_id": doc.file_id, "file_type": "document"})
         log.info(f"Добавлен документ: {doc.file_id} ({doc.mime_type})")
     await db.save_draft(update.effective_user.id, context.user_data["consult"], context.user_data["attachments"])
-    # после добавления файла повторно показываем кнопку "Готово"
     await update.message.reply_text(
         "Файл добавлен. Прикрепите ещё или нажмите «Готово», если всё загрузили.",
         reply_markup=ReplyKeyboardMarkup([["Готово"]], resize_keyboard=True)
@@ -499,7 +489,7 @@ async def new_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     consult = context.user_data["consult"]
     dentist = await db.get_dentist_by_tg_id(user.id)
-    dentist.setdefault("tg_id", user.id)  # важно для пользователей без ника
+    dentist.setdefault("tg_id", user.id)
     atts = context.user_data["attachments"]
 
     preview = build_summary_html(consult, dentist) + f"\n\n📎 Прикреплено файлов: {len(atts)}"
@@ -520,7 +510,7 @@ async def new_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     consult = context.user_data.get("consult", {})
     dentist = await db.get_dentist_by_tg_id(user.id)
-    dentist.setdefault("tg_id", user.id)  # важно для пользователей без ника
+    dentist.setdefault("tg_id", user.id)
     atts = context.user_data.get("attachments", [])
 
     if choice.startswith("✅"):
@@ -553,12 +543,10 @@ async def new_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("4/4. Прикрепите снимки/файлы (можно несколько, до 40 Мб)📎 Когда закончите — напишите «Готово»")
         return STATE_FILES
 
-# Fallback
 async def show_menu_on_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await update.message.reply_text("Главное меню:", reply_markup=MAIN_KB)
 
-# Error handler
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
     log.exception("Unhandled error", exc_info=context.error)
     try:
@@ -567,7 +555,6 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-# post_init
 async def post_init(application):
     await application.bot.set_my_commands([
         BotCommand("start", "Главное меню"),
@@ -582,7 +569,7 @@ async def post_init(application):
     ])
 
     await application.bot.set_my_short_description(
-        "Бот для стоматологов-хирургов. Помогает отправить данные ЛОР-врачу."
+        "Бот для быстрой связи между стоматологом-хирургом и хирургом-отоларинголом для планирования совместного лечения пациента."
     )
 
     await application.bot.set_my_description(
@@ -592,7 +579,6 @@ async def post_init(application):
     )
 
 
-# Application
 def build_application():
     request = HTTPXRequest(connect_timeout=10.0, read_timeout=120.0, write_timeout=120.0, pool_timeout=10.0)
     app = (
@@ -659,7 +645,6 @@ def build_application():
     app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, show_menu_on_unknown))
     return app
 
-# MAIN
 def main():
     asyncio.run(db.init_db())
     app = build_application()
