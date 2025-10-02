@@ -315,8 +315,6 @@ async def reg_work(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
-# --------------------- Создание консультации ---------------------
-
 async def new_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     consult, atts = await db.load_draft(user.id)
@@ -426,7 +424,6 @@ async def new_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return STATE_FILES
 
 
-# --------------------- Ошибки и init ---------------------
 
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE):
     log.exception("Unhandled error", exc_info=context.error)
